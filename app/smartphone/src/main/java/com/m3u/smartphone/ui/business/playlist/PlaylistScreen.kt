@@ -20,7 +20,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +27,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.Sort
 import androidx.compose.material.icons.rounded.KeyboardDoubleArrowUp
@@ -50,23 +51,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.paging.PagingData
 import com.google.accompanist.permissions.rememberPermissionState
 import com.m3u.business.playlist.PlaylistViewModel
-import com.m3u.core.architecture.preferences.hiltPreferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.mutablePreferenceOf
+import com.m3u.core.architecture.preferences.preferenceOf
 import com.m3u.core.foundation.ui.thenIf
 import com.m3u.core.util.basic.title
 import com.m3u.core.wrapper.Event
@@ -101,6 +103,8 @@ import com.m3u.smartphone.ui.material.model.LocalHazeState
 import com.m3u.smartphone.ui.material.model.LocalSpacing
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
@@ -115,17 +119,20 @@ internal fun PlaylistRoute(
     contentPadding: PaddingValues = PaddingValues()
 ) {
     val context = LocalContext.current
-    val preferences = hiltPreferences()
     val helper = LocalHelper.current
     val coroutineScope = rememberCoroutineScope()
     val colorScheme = MaterialTheme.colorScheme
     val lifecycleOwner = LocalLifecycleOwner.current
 
+    val autoRefreshChannels by preferenceOf(PreferencesKeys.AUTO_REFRESH_CHANNELS)
+    var rowCount by mutablePreferenceOf(PreferencesKeys.ROW_COUNT)
+    var godMode by mutablePreferenceOf(PreferencesKeys.GOD_MODE)
+
     val zapping by viewModel.zapping.collectAsStateWithLifecycle()
     val playlistUrl by viewModel.playlistUrl.collectAsStateWithLifecycle()
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
 
-    val channels by viewModel.channels.collectAsStateWithLifecycle(
+    val channels: Map<String, Flow<PagingData<Channel>>> by viewModel.channels.collectAsStateWithLifecycle(
         minActiveState = Lifecycle.State.RESUMED
     )
 
@@ -199,8 +206,8 @@ internal fun PlaylistRoute(
         }
     }
 
-    LaunchedEffect(preferences.autoRefreshChannels, playlistUrl) {
-        if (playlistUrl.isNotEmpty() && preferences.autoRefreshChannels) {
+    LaunchedEffect(autoRefreshChannels, playlistUrl) {
+        if (playlistUrl.isNotEmpty() && autoRefreshChannels) {
             viewModel.refresh()
         }
     }
@@ -213,9 +220,9 @@ internal fun PlaylistRoute(
         title = playlist?.title.orEmpty(),
         query = query,
         onQuery = { viewModel.query.value = it },
-        rowCount = preferences.rowCount,
+        rowCount = rowCount,
         zapping = zapping,
-        categoryWithChannels = channels,
+        channels = channels,
         pinnedCategories = pinnedCategories,
         onPinOrUnpinCategory = { viewModel.onPinOrUnpinCategory(it) },
         onHideCategory = { viewModel.onHideCategory(it) },
@@ -275,14 +282,14 @@ internal fun PlaylistRoute(
         },
         modifier = Modifier
             .fillMaxSize()
-            .thenIf(preferences.godMode) {
+            .thenIf(godMode) {
                 Modifier.interceptVolumeEvent { event ->
-                    preferences.rowCount = when (event) {
+                    rowCount = when (event) {
                         KeyEvent.KEYCODE_VOLUME_UP ->
-                            (preferences.rowCount - 1).coerceAtLeast(1)
+                            (rowCount - 1).coerceAtLeast(1)
 
                         KeyEvent.KEYCODE_VOLUME_DOWN ->
-                            (preferences.rowCount + 1).coerceAtMost(2)
+                            (rowCount + 1).coerceAtMost(2)
 
                         else -> return@interceptVolumeEvent
                     }
@@ -323,7 +330,7 @@ private fun PlaylistScreen(
     onQuery: (String) -> Unit,
     rowCount: Int,
     zapping: Channel?,
-    categoryWithChannels: List<PlaylistViewModel.CategoryWithChannels>,
+    channels: Map<String, Flow<PagingData<Channel>>>,
     pinnedCategories: List<String>,
     onPinOrUnpinCategory: (String) -> Unit,
     onHideCategory: (String) -> Unit,
@@ -398,7 +405,7 @@ private fun PlaylistScreen(
         }
     }
 
-    val categories = remember(categoryWithChannels) { categoryWithChannels.map { it.category } }
+    val categories = remember(channels) { channels.map { it.key } }
     var category by remember(categories) { mutableStateOf(categories.firstOrNull().orEmpty()) }
 
     val state = rememberLazyStaggeredGridState()
@@ -423,6 +430,8 @@ private fun PlaylistScreen(
     }
     BackHandler(isExpanded) { isExpanded = false }
 
+    var targetPageIndex: Event<Int> by remember { mutableStateOf(Event.Handled()) }
+
     val tabs = @Composable {
         PlaylistTabRow(
             selectedCategory = category,
@@ -430,7 +439,13 @@ private fun PlaylistScreen(
             isExpanded = isExpanded,
             bottomContentPadding = contentPadding only WindowInsetsSides.Bottom,
             onExpanded = { isExpanded = !isExpanded },
-            onCategoryChanged = { category = it },
+            onCategoryChanged = {
+                category = it
+                targetPageIndex = categories.indexOf(it)
+                    .takeIf { it != -1 }
+                    ?.let { eventOf(it) }
+                    ?: Event.Handled()
+            },
             pinnedCategories = pinnedCategories,
             onPinOrUnpinCategory = onPinOrUnpinCategory,
             onHideCategory = onHideCategory
@@ -438,30 +453,45 @@ private fun PlaylistScreen(
     }
 
     val gallery = @Composable {
-        val channel = remember(categoryWithChannels, category) {
-            categoryWithChannels.find { it.category == category }
+        val pagerState = rememberPagerState { channels.size }
+        val entries = channels.entries.toList()
+        LaunchedEffect(entries) {
+            snapshotFlow { pagerState.settledPage }
+                .collectLatest { index ->
+                    category = entries.getOrNull(index)?.key.orEmpty()
+                }
         }
-        ChannelGallery(
-            state = state,
-            rowCount = actualRowCount,
-            categoryWithChannels = channel,
-            zapping = zapping,
-            recently = sort == Sort.RECENTLY,
-            isVodOrSeriesPlaylist = isVodPlaylist || isSeriesPlaylist,
-            onClick = onPlayChannel,
-            contentPadding = contentPadding.minus(contentPadding.only(WindowInsetsSides.Top)),
-            onLongClick = {
-                mediaSheetValue = MediaSheetValue.PlaylistScreen(it)
-            },
-            getProgrammeCurrently = getProgrammeCurrently,
-            reloadThumbnail = reloadThumbnail,
-            syncThumbnail = syncThumbnail,
-            modifier = Modifier.hazeSource(LocalHazeState.current)
-        )
+        EventHandler(targetPageIndex) {
+            pagerState.scrollToPage(it)
+        }
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier
+                .hazeSource(LocalHazeState.current)
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        ) { index ->
+            val (_, channels) = entries[index]
+
+            ChannelGallery(
+                state = state,
+                rowCount = actualRowCount,
+                channels = channels,
+                zapping = zapping,
+                recently = sort == Sort.RECENTLY,
+                isVodOrSeriesPlaylist = isVodPlaylist || isSeriesPlaylist,
+                onClick = onPlayChannel,
+                contentPadding = contentPadding.minus(contentPadding.only(WindowInsetsSides.Top)),
+                onLongClick = {
+                    mediaSheetValue = MediaSheetValue.PlaylistScreen(it)
+                },
+                getProgrammeCurrently = getProgrammeCurrently,
+                reloadThumbnail = reloadThumbnail,
+                syncThumbnail = syncThumbnail,
+            )
+        }
     }
     Column(
         Modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest)
             .padding(contentPadding.minus(contentPadding.only(WindowInsetsSides.Bottom)))
             .then(modifier)
     ) {

@@ -1,6 +1,5 @@
 package com.m3u.business.foryou
 
-import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.work.WorkInfo
@@ -9,14 +8,14 @@ import androidx.work.WorkQuery
 import com.m3u.core.architecture.logger.Logger
 import com.m3u.core.architecture.logger.Profiles
 import com.m3u.core.architecture.logger.install
-import com.m3u.core.architecture.preferences.Preferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.Settings
+import com.m3u.core.architecture.preferences.flowOf
 import com.m3u.core.wrapper.Resource
-import com.m3u.core.wrapper.asResource
 import com.m3u.core.wrapper.mapResource
 import com.m3u.core.wrapper.resource
 import com.m3u.data.database.model.Channel
 import com.m3u.data.database.model.Playlist
-import com.m3u.data.database.model.PlaylistWithCount
 import com.m3u.data.parser.xtream.XtreamChannelInfo
 import com.m3u.data.repository.channel.ChannelRepository
 import com.m3u.data.repository.playlist.PlaylistRepository
@@ -47,21 +46,19 @@ class ForyouViewModel @Inject constructor(
     channelRepository: ChannelRepository,
     programmeRepository: ProgrammeRepository,
     private val playerManager: PlayerManager,
-    preferences: Preferences,
+    settings: Settings,
     workManager: WorkManager,
     delegate: Logger
 ) : ViewModel() {
     private val logger = delegate.install(Profiles.VIEWMODEL_FORYOU)
 
-    val playlists: StateFlow<Resource<List<PlaylistWithCount>>> =
-        playlistRepository
-            .observeAllCounts()
-            .asResource()
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.Lazily,
-                initialValue = Resource.Loading
-            )
+    val playlists: StateFlow<Map<Playlist, Int>> = playlistRepository
+        .observeAllCounts()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Lazily,
+            initialValue = emptyMap()
+        )
 
     val subscribingPlaylistUrls: StateFlow<List<String>> =
         workManager.getWorkInfosFlow(
@@ -83,7 +80,7 @@ class ForyouViewModel @Inject constructor(
 
     val refreshingEpgUrls: Flow<List<String>> = programmeRepository.refreshingEpgUrls
 
-    private val unseensDuration = snapshotFlow { preferences.unseensMilliseconds }
+    private val unseensDuration = settings.flowOf(PreferencesKeys.UNSEENS_MILLISECONDS)
         .map { it.toDuration(DurationUnit.MILLISECONDS) }
         .stateIn(
             scope = viewModelScope,

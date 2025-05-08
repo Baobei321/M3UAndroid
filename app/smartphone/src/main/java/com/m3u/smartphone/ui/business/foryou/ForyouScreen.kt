@@ -33,7 +33,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.m3u.business.foryou.ForyouViewModel
 import com.m3u.business.foryou.Recommend
-import com.m3u.core.architecture.preferences.hiltPreferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.mutablePreferenceOf
+import com.m3u.core.architecture.preferences.preferenceOf
 import com.m3u.core.foundation.ui.composableOf
 import com.m3u.core.foundation.ui.thenIf
 import com.m3u.core.util.basic.title
@@ -70,8 +72,10 @@ fun ForyouRoute(
     viewModel: ForyouViewModel = hiltViewModel()
 ) {
     val helper = LocalHelper.current
-    val preferences = hiltPreferences()
     val coroutineScope = rememberCoroutineScope()
+
+    var rowCount by mutablePreferenceOf(PreferencesKeys.ROW_COUNT)
+    val godMode by preferenceOf(PreferencesKeys.GOD_MODE)
 
     val title = stringResource(string.ui_title_foryou)
 
@@ -106,7 +110,7 @@ fun ForyouRoute(
             subscribingPlaylistUrls = subscribingPlaylistUrls,
             refreshingEpgUrls = refreshingEpgUrls,
             specs = specs,
-            rowCount = preferences.rowCount,
+            rowCount = rowCount,
             contentPadding = contentPadding,
             navigateToPlaylist = navigateToPlaylist,
             onPlayChannel = { channel ->
@@ -128,11 +132,11 @@ fun ForyouRoute(
             onUnsubscribePlaylist = viewModel::onUnsubscribePlaylist,
             modifier = Modifier
                 .fillMaxSize()
-                .thenIf(preferences.godMode) {
+                .thenIf(godMode) {
                     Modifier.interceptVolumeEvent { event ->
-                        preferences.rowCount = when (event) {
-                            KeyEvent.KEYCODE_VOLUME_UP -> (preferences.rowCount - 1).coerceAtLeast(1)
-                            KeyEvent.KEYCODE_VOLUME_DOWN -> (preferences.rowCount + 1).coerceAtMost(2)
+                        rowCount = when (event) {
+                            KeyEvent.KEYCODE_VOLUME_UP -> (rowCount - 1).coerceAtLeast(1)
+                            KeyEvent.KEYCODE_VOLUME_DOWN -> (rowCount + 1).coerceAtMost(2)
                             else -> return@interceptVolumeEvent
                         }
                     }
@@ -163,7 +167,7 @@ fun ForyouRoute(
 @Composable
 private fun ForyouScreen(
     rowCount: Int,
-    playlists: Resource<List<PlaylistWithCount>>,
+    playlists: Map<Playlist, Int>,
     subscribingPlaylistUrls: List<String>,
     refreshingEpgUrls: List<String>,
     specs: List<Recommend.Spec>,
@@ -174,7 +178,6 @@ private fun ForyouScreen(
     onUnsubscribePlaylist: (playlistUrl: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val spacing = LocalSpacing.current
     val configuration = LocalConfiguration.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -205,56 +208,36 @@ private fun ForyouScreen(
 
     Box(modifier) {
         HeadlineBackground()
-        when (playlists) {
-            Resource.Loading -> {
-                LinearProgressIndicator(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(contentPadding)
-                )
-            }
-
-            is Resource.Success -> {
-                val header = @Composable {
-                    RecommendGallery(
-                        specs = specs,
-                        navigateToPlaylist = navigateToPlaylist,
-                        onPlayChannel = onPlayChannel,
-                        onSpecChanged = { spec -> headlineSpec = spec },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-                PlaylistGallery(
-                    rowCount = actualRowCount,
-                    playlists = playlists.data,
-                    subscribingPlaylistUrls = subscribingPlaylistUrls,
-                    refreshingEpgUrls = refreshingEpgUrls,
-                    onClick = navigateToPlaylist,
-                    onLongClick = { mediaSheetValue = MediaSheetValue.ForyouScreen(it) },
-                    header = composableOf(specs.isNotEmpty(), header),
-                    contentPadding = contentPadding,
-                    modifier = Modifier.fillMaxSize()
-                )
-                MediaSheet(
-                    value = mediaSheetValue,
-                    onUnsubscribePlaylist = {
-                        onUnsubscribePlaylist(it.url)
-                        mediaSheetValue = MediaSheetValue.ForyouScreen()
-                    },
-                    onPlaylistConfiguration = navigateToPlaylistConfiguration,
-                    onDismissRequest = {
-                        mediaSheetValue = MediaSheetValue.ForyouScreen()
-                    }
-                )
-            }
-
-            is Resource.Failure -> {
-                Text(
-                    text = playlists.message.orEmpty(),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.Center)
-                )
-            }
+        val header = @Composable {
+            RecommendGallery(
+                specs = specs,
+                navigateToPlaylist = navigateToPlaylist,
+                onPlayChannel = onPlayChannel,
+                onSpecChanged = { spec -> headlineSpec = spec },
+                modifier = Modifier.fillMaxWidth()
+            )
         }
+        PlaylistGallery(
+            rowCount = actualRowCount,
+            playlists = playlists,
+            subscribingPlaylistUrls = subscribingPlaylistUrls,
+            refreshingEpgUrls = refreshingEpgUrls,
+            onClick = navigateToPlaylist,
+            onLongClick = { mediaSheetValue = MediaSheetValue.ForyouScreen(it) },
+            header = composableOf(specs.isNotEmpty(), header),
+            contentPadding = contentPadding,
+            modifier = Modifier.fillMaxSize()
+        )
+        MediaSheet(
+            value = mediaSheetValue,
+            onUnsubscribePlaylist = {
+                onUnsubscribePlaylist(it.url)
+                mediaSheetValue = MediaSheetValue.ForyouScreen()
+            },
+            onPlaylistConfiguration = navigateToPlaylistConfiguration,
+            onDismissRequest = {
+                mediaSheetValue = MediaSheetValue.ForyouScreen()
+            }
+        )
     }
 }

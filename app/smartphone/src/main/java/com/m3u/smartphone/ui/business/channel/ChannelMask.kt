@@ -2,6 +2,7 @@ package com.m3u.smartphone.ui.business.channel
 
 import android.content.pm.ActivityInfo
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -74,11 +75,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.fastRoundToInt
 import androidx.media3.common.Player
 import com.m3u.business.channel.PlayerState
-import com.m3u.core.architecture.preferences.hiltPreferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.preferenceOf
 import com.m3u.core.foundation.suggest.any
 import com.m3u.core.foundation.suggest.suggestAll
 import com.m3u.core.foundation.ui.composableOf
@@ -86,7 +92,7 @@ import com.m3u.core.foundation.ui.thenIf
 import com.m3u.core.util.basic.isNotEmpty
 import com.m3u.data.database.model.AdjacentChannels
 import com.m3u.i18n.R.string
-import com.m3u.smartphone.ui.business.channel.components.MaskDimension
+import com.m3u.smartphone.ui.business.channel.components.Paddings
 import com.m3u.smartphone.ui.business.channel.components.MaskTextButton
 import com.m3u.smartphone.ui.business.channel.components.PlayerMask
 import com.m3u.smartphone.ui.common.helper.LocalHelper
@@ -134,10 +140,9 @@ fun ChannelMask(
     onVolume: (Float) -> Unit,
     onNextChannelClick: () -> Unit,
     onPreviousChannelClick: () -> Unit,
-    onDimensionChanged: (MaskDimension) -> Unit,
+    onPaddingsChanged: (Paddings) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val preferences = hiltPreferences()
     val helper = LocalHelper.current
     val spacing = LocalSpacing.current
     val coroutineScope = rememberCoroutineScope()
@@ -150,6 +155,9 @@ fun ChannelMask(
     // they must be wrapped with rememberUpdatedState when using them.
     val currentVolume by rememberUpdatedState(volume)
     val currentBrightness by rememberUpdatedState(brightness)
+    val currentUseVertical by rememberUpdatedState(useVertical)
+    val currentIsPanelExpanded by rememberUpdatedState(isPanelExpanded)
+    val currentCwPosition by rememberUpdatedState(cwPosition)
 
     val muted = currentVolume == 0f
 
@@ -167,7 +175,11 @@ fun ChannelMask(
         }
     }
 
-    val isProgressEnabled = preferences.slider
+    val slider by preferenceOf(PreferencesKeys.SLIDER)
+    val screencast by preferenceOf(PreferencesKeys.SCREENCAST)
+    val alwaysShowReplay by preferenceOf(PreferencesKeys.ALWAYS_SHOW_REPLAY)
+    val screenRotating by preferenceOf(PreferencesKeys.SCREEN_ROTATING)
+
     val isStaticAndSeekable by remember(
         playerState.player,
         playerState.playState
@@ -196,9 +208,9 @@ fun ChannelMask(
     val contentPosition by produceState(
         initialValue = -1L,
         isStaticAndSeekable,
-        isProgressEnabled
+        slider
     ) {
-        while (isProgressEnabled && isStaticAndSeekable) {
+        while (slider && isStaticAndSeekable) {
             delay(50.milliseconds)
             value = playerState.player?.currentPosition ?: -1L
         }
@@ -207,9 +219,9 @@ fun ChannelMask(
     val contentDuration by produceState(
         initialValue = -1L,
         isStaticAndSeekable,
-        isProgressEnabled
+        slider
     ) {
-        while (isProgressEnabled && isStaticAndSeekable) {
+        while (slider && isStaticAndSeekable) {
             delay(50.milliseconds)
             value = playerState.player?.duration?.absoluteValue ?: -1L
         }
@@ -243,13 +255,19 @@ fun ChannelMask(
             modifier = Modifier.align(Alignment.Center)
         )
         val color by animateColorAsState(
-            Color.Black.copy(alpha = if (isPanelExpanded) 0f else 0.54f)
+            Color.Black.copy(alpha = if (currentIsPanelExpanded) 0f else 0.54f)
         )
         val playStateDisplayText = ChannelMaskUtils.playStateDisplayText(playerState.playState)
         val exceptionDisplayText =
             ChannelMaskUtils.playbackExceptionDisplayText(playerState.playerError)
 
-        val cwPositionObj = cwPosition.takeIf { it != -1L }?.let { CwPosition(it) }
+        val cwPositionObj = run {
+            currentCwPosition.takeIf {
+                currentUseVertical && !currentIsPanelExpanded && playerState.playState == Player.STATE_READY
+                        && it != -1L
+            }?.let { CwPosition(it) }
+        }
+
         PlayerMask(
             state = maskState,
             color = color,
@@ -301,17 +319,17 @@ fun ChannelMask(
                     )
                 }
 
-                if (!useVertical) {
+                if (!currentUseVertical) {
                     MaskButton(
                         state = maskState,
-                        icon = if (isPanelExpanded) Icons.Rounded.Archive
+                        icon = if (currentIsPanelExpanded) Icons.Rounded.Archive
                         else Icons.Rounded.Unarchive,
                         onClick = openOrClosePanel,
                         contentDescription = stringResource(string.feat_channel_tooltip_open_panel)
                     )
                 }
 
-                if (preferences.screencast) {
+                if (screencast) {
                     MaskButton(
                         state = maskState,
                         icon = Icons.Rounded.Cast,
@@ -333,12 +351,12 @@ fun ChannelMask(
                 val centerRole = MaskCenterRole.of(
                     playerState.playState,
                     playerState.isPlaying,
-                    preferences.alwaysShowReplay,
+                    alwaysShowReplay,
                     playerState.playerError
                 )
                 Box(Modifier.size(36.dp)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = !isPanelExpanded && adjacentChannels?.prevId != null,
+                        visible = !currentIsPanelExpanded && adjacentChannels?.prevId != null,
                         enter = fadeIn() + slideInHorizontally(initialOffsetX = { -it / 6 }),
                         exit = fadeOut() + slideOutHorizontally(targetOffsetX = { -it / 6 }),
                         modifier = Modifier.fillMaxSize()
@@ -353,7 +371,7 @@ fun ChannelMask(
 
                 Box(Modifier.size(52.dp)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = !isPanelExpanded && centerRole != MaskCenterRole.Loading,
+                        visible = !currentIsPanelExpanded && centerRole != MaskCenterRole.Loading,
                         enter = fadeIn(),
                         exit = fadeOut(),
                         modifier = Modifier.fillMaxSize()
@@ -369,7 +387,7 @@ fun ChannelMask(
                 }
                 Box(Modifier.size(36.dp)) {
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = !isPanelExpanded && adjacentChannels?.nextId != null,
+                        visible = !currentIsPanelExpanded && adjacentChannels?.nextId != null,
                         enter = fadeIn() + slideInHorizontally(initialOffsetX = { it / 6 }),
                         exit = fadeOut() + slideOutHorizontally(targetOffsetX = { it / 6 }),
                         modifier = Modifier.fillMaxSize()
@@ -382,20 +400,34 @@ fun ChannelMask(
                     }
                 }
             },
-            control = cwPositionObj?.let {
-                composableOf<RowScope> {
-                    CwPositionSliderImpl(it.milliseconds, onResetPlayback = onResetPlayback)
+            control = {
+                Crossfade(
+                    targetState = cwPositionObj,
+                    modifier = Modifier.align { size: IntSize, space: IntSize, _: LayoutDirection ->
+                        val centerX = (space.width - size.width).toFloat() / 2f
+                        val centerY = (space.height - size.height).toFloat() / 2f
+                        val x = centerX
+                        val y = centerY + playerState.videoSize.height() / 2
+                        IntOffset(x.fastRoundToInt(), y.fastRoundToInt())
+                    }
+                ) {
+                    if (it != null) {
+                        CwPositionSliderImpl(
+                            position = it.milliseconds,
+                            onResetPlayback = onResetPlayback
+                        )
+                    }
                 }
             },
             footer = composableOf<RowScope>(
                 any {
-                    suggest { !isPanelExpanded }
-                    suggest { !useVertical }
+                    suggest { !currentIsPanelExpanded }
+                    suggest { !currentUseVertical }
                     suggest { playStateDisplayText.isNotEmpty() }
                     suggest { exceptionDisplayText.isNotEmpty() }
                     suggestAll {
                         suggest { isStaticAndSeekable }
-                        suggest { isProgressEnabled }
+                        suggest { slider }
                     }
                 }
             ) {
@@ -404,9 +436,10 @@ fun ChannelMask(
                     modifier = Modifier
                         .semantics(mergeDescendants = true) { }
                         .weight(1f)
+                        .padding(bottom = spacing.small)
                 ) {
                     val alpha by animateFloatAsState(
-                        if (!isPanelExpanded || !useVertical) 1f else 0f
+                        if (!currentIsPanelExpanded || !currentUseVertical) 1f else 0f
                     )
                     Column(Modifier.alpha(alpha)) {
                         Text(
@@ -429,7 +462,7 @@ fun ChannelMask(
                     }
                     if (playStateDisplayText.isNotEmpty()
                         || exceptionDisplayText.isNotEmpty()
-                        || (isStaticAndSeekable && isProgressEnabled)
+                        || (isStaticAndSeekable && slider)
                     ) {
                         Spacer(
                             modifier = Modifier.height(spacing.small)
@@ -463,7 +496,7 @@ fun ChannelMask(
                             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                     }
                 }
-                if (preferences.screenRotating && !autoRotating) {
+                if (screenRotating && !autoRotating) {
                     MaskButton(
                         state = maskState,
                         icon = Icons.Rounded.ScreenRotationAlt,
@@ -477,19 +510,19 @@ fun ChannelMask(
                     )
                 }
             },
-            slider = composableOf(isProgressEnabled && isStaticAndSeekable) {
+            slider = composableOf(slider && isStaticAndSeekable) {
                 SliderImpl(
                     contentDuration = contentDuration,
                     contentPosition = contentPosition,
                     bufferedPosition = bufferedPosition,
-                    isPanelExpanded = isPanelExpanded,
+                    isPanelExpanded = currentIsPanelExpanded,
                     onBufferedPositionChanged = {
                         bufferedPosition = it
                         maskState.wake()
                     }
                 )
             },
-            onDimensionChanged = onDimensionChanged,
+            onPaddingsChanged = onPaddingsChanged,
             modifier = Modifier.fillMaxSize()
         )
     }
@@ -720,4 +753,3 @@ private enum class MaskNavigateRole {
 }
 
 data class CwPosition(val milliseconds: Long)
-data object Slide

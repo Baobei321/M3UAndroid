@@ -4,7 +4,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.net.Uri
-import androidx.compose.runtime.snapshotFlow
 import androidx.core.net.toUri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -18,7 +17,6 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.cache.Cache
-import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.rtmp.RtmpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -55,11 +53,12 @@ import com.m3u.core.architecture.logger.Logger
 import com.m3u.core.architecture.logger.Profiles
 import com.m3u.core.architecture.logger.install
 import com.m3u.core.architecture.logger.post
-import com.m3u.core.architecture.preferences.Preferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
 import com.m3u.core.architecture.preferences.ReconnectMode
+import com.m3u.core.architecture.preferences.Settings
+import com.m3u.core.architecture.preferences.get
 import com.m3u.data.SSLs
 import com.m3u.data.api.OkhttpClient
-import com.m3u.data.codec.Codecs
 import com.m3u.data.database.model.Channel
 import com.m3u.data.database.model.Playlist
 import com.m3u.data.database.model.copyXtreamEpisode
@@ -73,8 +72,6 @@ import io.ktor.http.Url
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -82,9 +79,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -107,10 +102,10 @@ import kotlin.time.Duration.Companion.seconds
 class PlayerManagerImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     @OkhttpClient(false) private val okHttpClient: OkHttpClient,
-    private val preferences: Preferences,
     private val playlistRepository: PlaylistRepository,
     private val channelRepository: ChannelRepository,
     private val cache: Cache,
+    private val settings: Settings,
     publisher: Publisher,
     delegate: Logger
 ) : PlayerManager, Player.Listener, MediaSession.Callback {
@@ -179,11 +174,6 @@ class PlayerManagerImpl @Inject constructor(
 
     private val playbackPosition = MutableStateFlow(-1L)
 
-    private var currentConnectTimeout = preferences.connectTimeout
-    private var currentTunneling = preferences.tunneling
-    private var currentCache = preferences.cache
-    private var observePreferencesChangingJob: Job? = null
-
     init {
         mainCoroutineScope.launch {
             playbackState.collectLatest { state ->
@@ -242,24 +232,11 @@ class PlayerManagerImpl @Inject constructor(
                 licenseKey = licenseKey,
                 applyContinueWatching = applyContinueWatching
             )
-
-            observePreferencesChangingJob?.cancel()
-            observePreferencesChangingJob = mainCoroutineScope.launch {
-                observePreferencesChanging { timeout, tunneling, cache ->
-                    if (timeout != currentConnectTimeout || tunneling != currentTunneling || cache != currentCache) {
-                        logger.post { "preferences changed, replaying..." }
-                        replay()
-                        currentConnectTimeout = timeout
-                        currentTunneling = tunneling
-                        currentCache = cache
-                    }
-                }
-            }
         }
     }
 
     private var extractor: MediaExtractorCompat? = null
-    private fun tryPlay(
+    private suspend fun tryPlay(
         url: String = channel.value?.url.orEmpty(),
         userAgent: String? = getUserAgent(channel.value?.url.orEmpty(), playlist.value),
         licenseType: String = channel.value?.licenseType.orEmpty(),
@@ -267,7 +244,7 @@ class PlayerManagerImpl @Inject constructor(
         applyContinueWatching: Boolean
     ) {
         val rtmp: Boolean = Url(url).protocol.name == "rtmp"
-        val tunneling: Boolean = preferences.tunneling
+        val tunneling = settings[PreferencesKeys.TUNNELING]
 
         val mimeType = when (val chain = chain) {
             is MimetypeChain.Remembered -> chain.mimeType
@@ -284,8 +261,7 @@ class PlayerManagerImpl @Inject constructor(
             "tryPlay, mimetype: $mimeType," +
                     " url: $url," +
                     " user-agent: $userAgent," +
-                    " rtmp: $rtmp, " +
-                    "tunneling: $tunneling"
+                    " rtmp: $rtmp"
         }
         val dataSourceFactory = if (rtmp) {
             RtmpDataSource.Factory()
@@ -370,8 +346,6 @@ class PlayerManagerImpl @Inject constructor(
 
     override fun release() {
         logger.post { "release" }
-        observePreferencesChangingJob?.cancel()
-        observePreferencesChangingJob = null
         extractor = null
         player.update {
             it ?: return
@@ -438,7 +412,7 @@ class PlayerManagerImpl @Inject constructor(
     }
 
     override suspend fun syncThumbnail(channelUrl: String): Uri? = withContext(Dispatchers.IO) {
-        val thumbnail = codecs.getThumbnail(context, channelUrl.toUri()) ?: return@withContext null
+        val thumbnail = Codecs.getThumbnail(context, channelUrl.toUri()) ?: return@withContext null
         val filename = UUID.randomUUID().toString() + ".jpeg"
         val file = File(thumbnailDir, filename)
         while (!file.createNewFile()) {
@@ -477,9 +451,8 @@ class PlayerManagerImpl @Inject constructor(
             addListener(this@PlayerManagerImpl)
         }
 
-    private val codecs: Codecs by lazy { Codecs.load() }
     private val renderersFactory: RenderersFactory by lazy {
-        codecs.createRenderersFactory(context)
+        Codecs.createRenderersFactory(context)
     }
 
     private fun createTrackSelector(tunneling: Boolean): TrackSelector {
@@ -495,25 +468,13 @@ class PlayerManagerImpl @Inject constructor(
     private fun createHttpDataSourceFactory(userAgent: String?): DataSource.Factory {
         val upstream = OkHttpDataSource.Factory(okHttpClient)
             .setUserAgent(userAgent)
-        return if (preferences.cache) {
-            CacheDataSource.Factory()
-                .setUpstreamDataSourceFactory(upstream)
-                .setCache(cache)
-                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-        } else upstream
-    }
-
-    private suspend fun observePreferencesChanging(
-        onChanged: suspend (timeout: Long, tunneling: Boolean, cache: Boolean) -> Unit
-    ): Unit = coroutineScope {
-        combine(
-            snapshotFlow { preferences.connectTimeout },
-            snapshotFlow { preferences.tunneling },
-            snapshotFlow { preferences.cache }
-        ) { timeout, tunneling, cache ->
-            onChanged(timeout, tunneling, cache)
-        }
-            .collect()
+//        return if (cache) {
+//            CacheDataSource.Factory()
+//                .setUpstreamDataSourceFactory(upstream)
+//                .setCache(cache)
+//                .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+//        }
+        return upstream
     }
 
     override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -573,7 +534,7 @@ class PlayerManagerImpl @Inject constructor(
                             playbackException.value = exception
                         }
 
-                        else -> tryPlay(applyContinueWatching = false)
+                        else -> mainCoroutineScope.launch { tryPlay(applyContinueWatching = false) }
                     }
                 }
             }
@@ -749,7 +710,7 @@ class PlayerManagerImpl @Inject constructor(
     }
 
     private suspend fun onPlaybackEnded() {
-        if (preferences.reconnectMode == ReconnectMode.RECONNECT) {
+        if (settings[PreferencesKeys.RECONNECT_MODE] == ReconnectMode.RECONNECT) {
             mainCoroutineScope.launch { replay() }
         }
         val channelUrl = chain.url

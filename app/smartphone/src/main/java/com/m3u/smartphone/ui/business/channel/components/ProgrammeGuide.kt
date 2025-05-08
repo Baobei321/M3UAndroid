@@ -60,15 +60,14 @@ import androidx.compose.ui.util.fastForEach
 import androidx.compose.ui.zIndex
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.paging.compose.LazyPagingItems
-import com.m3u.core.architecture.preferences.hiltPreferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.preferenceOf
 import com.m3u.data.database.model.Programme
 import com.m3u.data.database.model.ProgrammeRange
 import com.m3u.data.database.model.ProgrammeRange.Companion.HOUR_LENGTH
 import com.m3u.smartphone.TimeUtils.formatEOrSh
 import com.m3u.smartphone.TimeUtils.toEOrSh
 import com.m3u.smartphone.ui.material.components.FontFamilies
-import com.m3u.smartphone.ui.material.ktx.Edge
-import com.m3u.smartphone.ui.material.ktx.blurEdges
 import com.m3u.smartphone.ui.material.model.LocalSpacing
 import eu.wewox.minabox.MinaBox
 import eu.wewox.minabox.MinaBoxItem
@@ -152,14 +151,34 @@ internal fun ProgramGuide(
             scrollDirection = MinaBoxScrollDirection.VERTICAL,
             modifier = Modifier
                 .fillMaxSize()
-                .blurEdges(
-                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                    listOf(Edge.Top, Edge.Bottom)
-                )
                 .background(MaterialTheme.colorScheme.surfaceContainer)
                 .then(zoomGestureModifier)
                 .then(modifier)
         ) {
+            // clock
+            items(
+                count = ((range.end - range.start) / 1000 / 60 / 60).toInt(),
+                layoutInfo = { hour ->
+                    MinaBoxItem(
+                        x = 0f,
+                        y = currentHeight * hour + padding * 3,
+                        width = padding * 2,
+                        height = currentHeight
+                    )
+                }
+            ) {
+                Canvas(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    repeat(12) { index ->
+                        drawLine(
+                            Color.LightGray,
+                            Offset(0f, currentHeight / 12 * index),
+                            Offset(size.width, currentHeight / 12 * index)
+                        )
+                    }
+                }
+            }
             // programmes
             items(
                 count = programmes.itemCount,
@@ -211,7 +230,7 @@ internal fun ProgramGuide(
             }
 
             // current timeline background placeholder
-            items(1, layoutInfo = {
+            items(count = 1, layoutInfo = {
                 MinaBoxItem(
                     x = 0f,
                     y = currentTimelineOffset + padding * 2,
@@ -296,8 +315,8 @@ private fun ProgrammeCell(
 ) {
     val currentOnPressed by rememberUpdatedState(onPressed)
     val spacing = LocalSpacing.current
-    val preferences = hiltPreferences()
-    val clockMode = preferences.twelveHourClock
+    val clockMode by preferenceOf(PreferencesKeys.CLOCK_MODE)
+
     val content = @Composable {
         Column(
             modifier = Modifier
@@ -397,8 +416,9 @@ private fun CurrentTimelineCell(
     modifier: Modifier = Modifier
 ) {
     val spacing = LocalSpacing.current
-    val preferences = hiltPreferences()
-    val twelveHourClock = preferences.twelveHourClock
+
+    val twelveHourClock by preferenceOf(PreferencesKeys.CLOCK_MODE)
+
     val color = MaterialTheme.colorScheme.error
     val contentColor = MaterialTheme.colorScheme.onError
     val currentMilliseconds by rememberUpdatedState(milliseconds)

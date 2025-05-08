@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material.icons.Icons
@@ -47,7 +48,6 @@ import androidx.compose.ui.util.fastMaxOfOrNull
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.PagingData
-import com.m3u.business.playlist.PlaylistViewModel
 import com.m3u.core.foundation.ui.composableOf
 import com.m3u.data.database.model.Channel
 import com.m3u.data.service.MediaCommand
@@ -264,7 +264,7 @@ internal fun MainContent(
             ChannelGallery(
                 state = state,
                 rowCount = 1,
-                categoryWithChannels = PlaylistViewModel.CategoryWithChannels("", channels),
+                channels = channels,
                 zapping = null,
                 recently = false,
                 isVodOrSeriesPlaylist = false,
@@ -277,7 +277,8 @@ internal fun MainContent(
                 onLongClick = {},
                 getProgrammeCurrently = { null },
                 reloadThumbnail = { null },
-                syncThumbnail = { null }
+                syncThumbnail = { null },
+                contentPadding = WindowInsets.ime.asPaddingValues()
             )
         }
         HazeMaterials.regular()

@@ -17,9 +17,8 @@ dependencyResolutionManagement {
 }
 rootProject.name = "M3U"
 include(":app:smartphone", ":app:tv", ":app:extension")
-include(":core", ":core:foundation")
+include(":core", ":core:foundation", ":core:extension")
 include(":data")
-include(":data:codec", ":data:codec:lite", ":data:codec:rich")
 include(
     ":business:foryou",
     ":business:favorite",
@@ -35,9 +34,3 @@ include(
     ":lint:annotation",
     ":lint:processor"
 )
-includeBuild("extension/api") {
-    dependencySubstitution {
-        substitute(module("com.github.oxyroid:m3u-extension-api")).using(project(":"))
-    }
-}
-include(":extension:runtime")

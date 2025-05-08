@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.systemGestureExclusion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -33,9 +35,8 @@ import com.m3u.smartphone.ui.material.components.mask.MaskState
 import com.m3u.smartphone.ui.material.model.LocalSpacing
 
 @Immutable
-data class MaskDimension(
+data class Paddings(
     val top: Dp = Dp.Unspecified,
-    val middle: Dp = Dp.Unspecified,
     val bottom: Dp = Dp.Unspecified
 )
 
@@ -47,18 +48,18 @@ fun PlayerMask(
     header: @Composable RowScope.() -> Unit,
     body: @Composable RowScope.() -> Unit,
     footer: (@Composable RowScope.() -> Unit)? = null,
-    control: (@Composable RowScope.() -> Unit)? = null,
     slider: (@Composable () -> Unit)? = null,
-    onDimensionChanged: (MaskDimension) -> Unit = {}
+    control: (@Composable BoxScope.() -> Unit) = {},
+    onPaddingsChanged: (Paddings) -> Unit = {}
 ) {
     val configuration = LocalConfiguration.current
     val spacing = LocalSpacing.current
     val density = LocalDensity.current
 
     val windowInsets = WindowInsets.safeDrawing
-    var size: MaskDimension by remember {
+    var size: Paddings by remember {
         mutableStateOf(
-            MaskDimension(
+            Paddings(
                 top = with(density) { windowInsets.getTop(density).toDp() },
                 bottom = with(density) { windowInsets.getBottom(density).toDp() },
             )
@@ -68,15 +69,16 @@ fun PlayerMask(
     Mask(
         state = state,
         color = color,
-        modifier = modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+        modifier = modifier.windowInsetsPadding(WindowInsets.safeDrawing),
+        control = control
     ) {
         DisposableEffect(Unit) {
             onDispose {
-                size = MaskDimension(
+                size = Paddings(
                     top = with(density) { windowInsets.getTop(density).toDp() },
-                    bottom =  with(density) { windowInsets.getBottom(density).toDp() }
+                    bottom = with(density) { windowInsets.getBottom(density).toDp() }
                 )
-                onDimensionChanged(size)
+                onPaddingsChanged(size)
             }
         }
         Row(
@@ -86,7 +88,7 @@ fun PlayerMask(
                     size = size.copy(
                         top = with(density) { (it.size.height + windowInsets.getTop(density)).toDp() }
                     )
-                    onDimensionChanged(size)
+                    onPaddingsChanged(size)
                 }
                 .padding(horizontal = spacing.medium),
             horizontalArrangement = Arrangement.spacedBy(
@@ -103,13 +105,7 @@ fun PlayerMask(
             modifier = Modifier
                 .padding(horizontal = spacing.medium)
                 .fillMaxWidth()
-                .weight(1f)
-                .onGloballyPositioned {
-                    size = size.copy(
-                        middle = with(density) { it.size.height.toDp() }
-                    )
-                    onDimensionChanged(size)
-                },
+                .weight(1f),
             horizontalArrangement = Arrangement.spacedBy(
                 centerSpacing,
                 Alignment.CenterHorizontally
@@ -118,16 +114,10 @@ fun PlayerMask(
             content = body
         )
         Column(
-            modifier = Modifier.padding(horizontal = spacing.medium)
+            modifier = Modifier
+                .systemGestureExclusion()
+                .padding(horizontal = spacing.medium)
         ) {
-            control?.let {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.Bottom,
-                    content = it
-                )
-            }
             footer?.let {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -144,7 +134,7 @@ fun PlayerMask(
                     size = size.copy(
                         bottom = with(density) { (it.size.height + windowInsets.getBottom(density)).toDp() }
                     )
-                    onDimensionChanged(size)
+                    onPaddingsChanged(size)
                 }
             ) {
                 slider?.invoke()

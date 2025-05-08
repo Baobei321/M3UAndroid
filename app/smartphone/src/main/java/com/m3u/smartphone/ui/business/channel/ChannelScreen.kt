@@ -9,7 +9,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
@@ -20,6 +19,7 @@ import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,17 +46,17 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import com.google.accompanist.permissions.rememberPermissionState
 import com.m3u.business.channel.ChannelViewModel
 import com.m3u.business.channel.PlayerState
-import com.m3u.core.architecture.preferences.hiltPreferences
+import com.m3u.core.architecture.preferences.PreferencesKeys
+import com.m3u.core.architecture.preferences.preferenceOf
 import com.m3u.core.util.basic.isNotEmpty
 import com.m3u.core.util.basic.title
 import com.m3u.data.database.model.AdjacentChannels
 import com.m3u.data.database.model.Channel
 import com.m3u.data.database.model.Playlist
 import com.m3u.i18n.R.string
-import com.m3u.smartphone.ui.business.channel.components.CoverPlaceholder
 import com.m3u.smartphone.ui.business.channel.components.DlnaDevicesBottomSheet
 import com.m3u.smartphone.ui.business.channel.components.FormatsBottomSheet
-import com.m3u.smartphone.ui.business.channel.components.MaskDimension
+import com.m3u.smartphone.ui.business.channel.components.Paddings
 import com.m3u.smartphone.ui.business.channel.components.MaskGestureValuePanel
 import com.m3u.smartphone.ui.business.channel.components.PlayerPanel
 import com.m3u.smartphone.ui.business.channel.components.VerticalGestureArea
@@ -65,6 +65,7 @@ import com.m3u.smartphone.ui.common.helper.OnPipModeChanged
 import com.m3u.smartphone.ui.material.components.Player
 import com.m3u.smartphone.ui.material.components.PullPanelLayout
 import com.m3u.smartphone.ui.material.components.PullPanelLayoutDefaults
+import com.m3u.smartphone.ui.material.components.isExpanded
 import com.m3u.smartphone.ui.material.components.mask.MaskInterceptor
 import com.m3u.smartphone.ui.material.components.mask.MaskState
 import com.m3u.smartphone.ui.material.components.mask.rememberMaskState
@@ -85,10 +86,12 @@ fun ChannelRoute(
     val openInExternalPlayerString = stringResource(string.feat_channel_open_in_external_app)
 
     val helper = LocalHelper.current
-    val preferences = hiltPreferences()
     val context = LocalContext.current
     val density = LocalDensity.current
     val windowInfo = LocalWindowInfo.current
+
+    val isPanelEnabled by preferenceOf(PreferencesKeys.PLAYER_PANEL)
+    val zappingMode by preferenceOf(PreferencesKeys.ZAPPING_MODE)
 
     val requestIgnoreBatteryOptimizations =
         rememberPermissionState(Manifest.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
@@ -117,13 +120,19 @@ fun ChannelRoute(
     val programmeReminderIds by viewModel.programmeReminderIds.collectAsStateWithLifecycle()
 
     var brightness by remember { mutableFloatStateOf(helper.brightness) }
+    val isSupportBrightnessGesture by remember { derivedStateOf { brightness != -1f } }
     var speed by remember { mutableFloatStateOf(1f) }
     var isPipMode by remember { mutableStateOf(false) }
     var isAutoZappingMode by remember { mutableStateOf(true) }
     var choosing by remember { mutableStateOf(false) }
 
+    val brightnessGesture by preferenceOf(PreferencesKeys.BRIGHTNESS_GESTURE)
+    val volumeGesture by preferenceOf(PreferencesKeys.VOLUME_GESTURE)
+
+    val brightnessGestureEnabled by remember { derivedStateOf { isSupportBrightnessGesture && brightnessGesture } }
+    val volumeGestureEnabled by remember { derivedStateOf { volumeGesture } }
+
     val useVertical = PullPanelLayoutDefaults.UseVertical
-    val isPanelEnabled = preferences.panel
 
     val maskState = rememberMaskState()
     val pullPanelLayoutState = rememberPullPanelLayoutState()
@@ -153,9 +162,9 @@ fun ChannelRoute(
         }
     }
 
-    LaunchedEffect(preferences.zappingMode, playerState.videoSize) {
+    LaunchedEffect(zappingMode, playerState.videoSize) {
         val videoSize = playerState.videoSize
-        if (isAutoZappingMode && preferences.zappingMode && !isPipMode) {
+        if (isAutoZappingMode && zappingMode && !isPipMode) {
             maskState.sleep()
             val rect = if (videoSize.isNotEmpty) videoSize
             else Rect(0, 0, 1920, 1080)
@@ -163,28 +172,44 @@ fun ChannelRoute(
         }
     }
 
+    val isBarVisible by remember {
+        derivedStateOf {
+            if (pullPanelLayoutState.isExpanded) true
+            else maskState.visible
+        }
+    }
+
     LaunchedEffect(Unit) {
-        snapshotFlow { brightness }
-            .drop(1)
-            .onEach { helper.brightness = it }
+        if (isSupportBrightnessGesture) {
+            snapshotFlow { brightness }
+                .drop(1)
+                .onEach { helper.brightness = it }
+                .launchIn(this)
+        }
+
+        snapshotFlow { isBarVisible }
+            .onEach { isBarVisible ->
+                helper.statusBarVisibility = isBarVisible
+                helper.navigationBarVisibility = isBarVisible
+            }
             .launchIn(this)
 
         snapshotFlow { maskState.visible }
-            .onEach { visible ->
-                helper.navigationBarVisibility = visible
-                viewModel.onMaskStateChanged(visible)
-            }
+            .onEach { viewModel.onMaskStateChanged(it) }
             .launchIn(this)
+
         snapshotFlow { pullPanelLayoutState.fraction }
             .drop(1)
             .onEach { maskState.sleep() }
             .launchIn(this)
     }
 
-    DisposableEffect(Unit) {
-        val prev = helper.brightness
-        onDispose {
-            helper.brightness = prev
+    if (brightnessGestureEnabled) {
+        DisposableEffect(Unit) {
+            val prev = helper.brightness
+            onDispose {
+                helper.brightness = prev
+            }
         }
     }
 
@@ -193,10 +218,14 @@ fun ChannelRoute(
         maskState.intercept(interceptor)
     }
 
-    var dimension: MaskDimension by remember { mutableStateOf(MaskDimension()) }
-    val onDimensionChanged = { size: MaskDimension -> dimension = size }
-    val topPadding by animateDpAsState(dimension.top.takeOrElse { 0.dp }.takeIf { isPanelExpanded } ?: 0.dp)
-    val bottomPadding by animateDpAsState(dimension.bottom.takeOrElse { 0.dp }.takeIf { isPanelExpanded } ?: 0.dp)
+    var currentPaddings: Paddings by remember { mutableStateOf(Paddings()) }
+    val onPaddingsChanged = { paddings: Paddings -> currentPaddings = paddings }
+    val topPadding by animateDpAsState(
+        currentPaddings.top.takeOrElse { 0.dp }.takeIf { isPanelExpanded } ?: 0.dp
+    )
+    val bottomPadding by animateDpAsState(
+        currentPaddings.bottom.takeOrElse { 0.dp }.takeIf { isPanelExpanded } ?: 0.dp
+    )
 
     val aspectRatio = with(density) {
         val source = playerState.videoSize
@@ -243,6 +272,7 @@ fun ChannelRoute(
                     }
                 },
                 onCancelRemindProgramme = viewModel::onCancelRemindProgramme,
+                onRequestClosed = { pullPanelLayoutState.collapse() }
             )
         },
         content = {
@@ -271,10 +301,12 @@ fun ChannelRoute(
                 channel = channel,
                 hasTrack = tracks.isNotEmpty(),
                 isPanelExpanded = isPanelExpanded,
-                volume = volume,
-                onVolume = viewModel::onVolume,
                 brightness = brightness,
                 onBrightness = { brightness = it },
+                volume = volume,
+                onVolume = viewModel::onVolume,
+                brightnessGestureEnabled = brightnessGestureEnabled,
+                volumeGestureEnabled = volumeGestureEnabled,
                 speed = speed,
                 onSpeedUpdated = {
                     viewModel.onSpeedUpdated(it)
@@ -289,7 +321,7 @@ fun ChannelRoute(
                     maskState.unlockAll()
                     pullPanelLayoutState.collapse()
                 },
-                onDimensionChanged = onDimensionChanged,
+                onPaddingsChanged = onPaddingsChanged,
                 onAlignment = onAlignment
             )
         },
@@ -338,8 +370,10 @@ private fun ChannelPlayer(
     isSeriesPlaylist: Boolean,
     hasTrack: Boolean,
     isPanelExpanded: Boolean,
-    volume: Float,
     brightness: Float,
+    volume: Float,
+    brightnessGestureEnabled: Boolean,
+    volumeGestureEnabled: Boolean,
     speed: Float,
     cwPosition: Long,
     onResetPlayback: () -> Unit,
@@ -353,7 +387,7 @@ private fun ChannelPlayer(
     onNextChannelClick: () -> Unit,
     onEnterPipMode: () -> Unit,
     onSpeedUpdated: (Float) -> Unit,
-    onDimensionChanged: (MaskDimension) -> Unit,
+    onPaddingsChanged: (Paddings) -> Unit,
     onAlignment: (size: IntSize, space: IntSize) -> IntOffset,
     modifier: Modifier = Modifier,
 ) {
@@ -368,7 +402,8 @@ private fun ChannelPlayer(
     val currentBrightness by rememberUpdatedState(brightness)
     val currentVolume by rememberUpdatedState(volume)
     val currentSpeed by rememberUpdatedState(speed)
-    val preferences = hiltPreferences()
+
+    val clipMode by preferenceOf(PreferencesKeys.CLIP_MODE)
 
     val useVertical = with(windowInfo.containerSize) { width < height }
 
@@ -380,10 +415,8 @@ private fun ChannelPlayer(
     Box(modifier) {
         val state = rememberPlayerState(
             player = playerState.player,
-            clipMode = preferences.clipMode
+            clipMode = clipMode
         )
-        var dimension: MaskDimension by remember { mutableStateOf(MaskDimension()) }
-        val topPadding = with(density) { dimension.top.takeOrElse { 0.dp }.toPx() }
         Player(
             state = state,
             modifier = Modifier
@@ -403,9 +436,10 @@ private fun ChannelPlayer(
             onDrag = onBrightness,
             onClick = maskState::toggle,
             modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(0.18f),
-            enabled = preferences.brightnessGesture
+                .fillMaxHeight(0.7f)
+                .fillMaxWidth(0.18f)
+                .align(Alignment.CenterStart),
+            enabled = brightnessGestureEnabled
         )
 
         VerticalGestureArea(
@@ -419,28 +453,10 @@ private fun ChannelPlayer(
             onDrag = onVolume,
             onClick = maskState::toggle,
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .fillMaxHeight()
+                .align(Alignment.CenterEnd)
+                .fillMaxHeight(0.7f)
                 .fillMaxWidth(0.18f),
-            enabled = preferences.volumeGesture
-        )
-
-        val shouldShowPlaceholder =
-            !preferences.noPictureMode && cover.isNotEmpty() && playerState.videoSize.isEmpty
-
-        CoverPlaceholder(
-            visible = shouldShowPlaceholder,
-            cover = cover,
-            modifier = Modifier
-                .size(dimension.middle)
-                .align { size: IntSize, space: IntSize, _ ->
-                    val centerX = (space.width - size.width).toFloat() / 2f
-                    val centerY = (space.height - size.height).toFloat() / 2f
-                    val x = centerX * 1
-                    val y = if (!useVertical) centerY
-                    else centerY - (centerY - topPadding) * 1 // fraction TODO
-                    IntOffset(x.fastRoundToInt(), y.fastRoundToInt())
-                }
+            enabled = volumeGestureEnabled
         )
 
         ChannelMask(
@@ -470,10 +486,7 @@ private fun ChannelPlayer(
             onSpeedStart = { gesture = MaskGesture.SPEED },
             onSpeedEnd = { gesture = null },
             gesture = gesture,
-            onDimensionChanged = {
-                dimension = it
-                onDimensionChanged(it)
-            }
+            onPaddingsChanged = onPaddingsChanged
         )
 
         if (gesture != null) {

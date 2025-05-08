@@ -9,12 +9,15 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.m3u.core.extension.RemoteService
 import com.m3u.extension.api.CallTokenConst
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import java.util.UUID
 import javax.inject.Inject
@@ -63,6 +66,7 @@ class ExtensionViewModel @Inject constructor(
             .toList()
         emit(extensions)
     }
+        .flowOn(Dispatchers.Default)
         .stateIn(
             scope = viewModelScope,
             initialValue = emptyList(),
@@ -73,7 +77,7 @@ class ExtensionViewModel @Inject constructor(
         val intent = Intent().apply {
             this.component = ComponentName(app.packageName, app.mainClassName)
             putExtra(CallTokenConst.PACKAGE_NAME, context.packageName)
-            putExtra(CallTokenConst.CLASS_NAME, "com.m3u.extension.runtime.RemoteService")
+            putExtra(CallTokenConst.CLASS_NAME, RemoteService::class.qualifiedName)
             putExtra(CallTokenConst.ACCESS_KEY, UUID.randomUUID().toString())
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

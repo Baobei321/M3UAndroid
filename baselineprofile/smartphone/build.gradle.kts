@@ -28,14 +28,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    flavorDimensions += listOf("channel", "codec")
-    productFlavors {
-        create("stableChannel") { dimension = "channel" }
-        create("snapshotChannel") { dimension = "channel" }
-        create("richCodec") { dimension = "codec" }
-        create("liteCodec") { dimension = "codec" }
-    }
-
     testOptions.managedDevices.allDevices {
         create<ManagedVirtualDevice>("Pixel5Api31") {
             device = "Pixel 5"
@@ -57,12 +49,9 @@ baselineProfile {
 
 androidComponents {
     onVariants { v ->
-        val isSnapshot = "snapshot" in v.name
-
         v.instrumentationRunnerArguments.put(
             "targetAppId",
-            if (isSnapshot) "com.m3u.smartphone.snapshot"
-            else "com.m3u.smartphone"
+            "com.m3u.smartphone"
         )
     }
 }

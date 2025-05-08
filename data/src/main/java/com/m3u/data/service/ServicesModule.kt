@@ -1,4 +1,5 @@
 @file:Suppress("unused")
+
 package com.m3u.data.service
 
 import android.app.NotificationManager
@@ -15,16 +16,13 @@ import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.work.WorkManager
 import com.m3u.core.architecture.FileProvider
 import com.m3u.core.architecture.logger.Logger
+import com.m3u.core.architecture.preferences.Settings
+import com.m3u.core.architecture.preferences.settings
 import com.m3u.data.logger.MessageLogger
 import com.m3u.data.logger.StubLogger
+import com.m3u.data.service.internal.FileProviderImpl
 import com.m3u.data.service.internal.MessagerImpl
 import com.m3u.data.service.internal.PlayerManagerImpl
-import com.m3u.data.service.internal.DPadReactionServiceImpl
-import com.m3u.data.service.internal.FileProviderImpl
-import com.m3u.data.tv.http.HttpServer
-import com.m3u.data.tv.http.HttpServerImpl
-import com.m3u.data.tv.nsd.NsdDeviceManager
-import com.m3u.data.tv.nsd.NsdDeviceManagerImpl
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -58,18 +56,6 @@ internal interface BindServicesModule {
     @Singleton
     @Logger.MessageImpl
     fun bindMessageLogger(logger: MessageLogger): Logger
-
-    @Binds
-    @Singleton
-    fun bindNsdDeviceManager(manager: NsdDeviceManagerImpl): NsdDeviceManager
-
-    @Binds
-    @Singleton
-    fun bindHttpServer(server: HttpServerImpl): HttpServer
-
-    @Binds
-    @Singleton
-    fun bindDPadReactionService(service: DPadReactionServiceImpl): DPadReactionService
 }
 
 @Module
@@ -104,6 +90,12 @@ object ProvidedServicesModule {
     fun provideDatabaseProvider(
         @ApplicationContext context: Context
     ): StandaloneDatabaseProvider = StandaloneDatabaseProvider(context)
+
+    @Provides
+    @Singleton
+    fun provideSettings(
+        @ApplicationContext context: Context
+    ): Settings = context.settings
 
     @Provides
     @Singleton

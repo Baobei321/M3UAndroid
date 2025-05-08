@@ -40,9 +40,10 @@ fun PullPanelLayout(
                     detectVerticalDragGestures(
                         onDragStart = { impl.isDragging = true },
                         onVerticalDrag = { _, delta ->
-                            impl.fraction = (impl.fraction - delta * 2 / size.height)
-                                .coerceIn(0f, 1f)
-                            delta
+                            val before = impl.fraction
+                            impl.fraction = (before + (-delta) * 2 / size.height).coerceIn(0f, 1f)
+                            val after = impl.fraction
+                            (after - before) / ((-delta) * 2 / size.height) * delta
                         },
                         onDragEnd = { impl.isDragging = false },
                         onDragCancel = { impl.isDragging = false }
@@ -86,8 +87,10 @@ sealed class PullPanelLayoutState {
     abstract val fraction: Float
     abstract fun expand()
     abstract fun collapse()
-    abstract val isExpanded: Boolean
 }
+
+val PullPanelLayoutState.isExpanded: Boolean
+    inline get() = value == PullPanelLayoutValue.EXPANDED
 
 @Composable
 fun rememberPullPanelLayoutState(
@@ -143,7 +146,4 @@ private class PullPanelLayoutStateImpl(
             }
             field = newValue
         }
-
-    override val isExpanded: Boolean
-        get() = value == PullPanelLayoutValue.EXPANDED
 }

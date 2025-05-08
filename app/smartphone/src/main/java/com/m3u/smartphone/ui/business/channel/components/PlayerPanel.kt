@@ -53,7 +53,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -102,16 +101,23 @@ internal fun PlayerPanel(
     programmeReminderIds: List<Int>,
     onRemindProgramme: (Programme) -> Unit,
     onCancelRemindProgramme: (Programme) -> Unit,
+    onRequestClosed: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
 
     Surface(
-        shape = if (useVertical) RectangleShape else AbsoluteSmoothCornerShape(
+        shape = if (useVertical) AbsoluteSmoothCornerShape(
+            cornerRadiusTL = spacing.medium,
+            cornerRadiusTR = spacing.medium,
+            smoothnessAsPercentTL = 100,
+            smoothnessAsPercentTR = 100
+        ) else AbsoluteSmoothCornerShape(
             cornerRadiusTL = spacing.medium,
             cornerRadiusBL = spacing.medium,
             smoothnessAsPercentTL = 100,
             smoothnessAsPercentBL = 100
         ),
+        shadowElevation = 4.dp,
         modifier = modifier
     ) {
         var programme: Programme? by remember { mutableStateOf(null) }
@@ -129,6 +135,7 @@ internal fun PlayerPanel(
             programmes = programmes,
             programmeRange = programmeRange,
             programmeReminderIds = programmeReminderIds,
+            onRequestClosed = onRequestClosed,
             onProgrammePressed = {
                 programme = it
                 animProgramme = it
@@ -280,7 +287,8 @@ fun PlayerPanelImpl(
     programmeRange: ProgrammeRange,
     programmeReminderIds: List<Int>,
     modifier: Modifier = Modifier,
-    onProgrammePressed: (Programme) -> Unit
+    onProgrammePressed: (Programme) -> Unit,
+    onRequestClosed: () -> Unit,
 ) {
     val spacing = LocalSpacing.current
     Column(
@@ -292,9 +300,15 @@ fun PlayerPanelImpl(
             }
             .padding(vertical = spacing.medium)
     ) {
-        if (isPanelExpanded && useVertical) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(spacing.medium),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = spacing.medium)
+        ) {
             Column(
-                modifier = Modifier.padding(horizontal = spacing.medium)
+                modifier = Modifier
+                    .weight(1f)
             ) {
                 Text(
                     text = title.trim(),
@@ -314,7 +328,13 @@ fun PlayerPanelImpl(
                     modifier = Modifier.basicMarquee()
                 )
             }
+            Icon(
+                imageVector = Icons.Rounded.Close,
+                contentDescription = null,
+                modifier = Modifier.clickable { onRequestClosed() }
+            )
         }
+
 
         if (isChannelsSupported) {
             ChannelGallery(
