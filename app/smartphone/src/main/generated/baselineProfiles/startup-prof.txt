@@ -14397,6 +14397,7 @@ Landroidx/datastore/core/DataStoreImpl$data$1$invokeSuspend$$inlined$map$1$2;
 HSPLandroidx/datastore/core/DataStoreImpl$data$1$invokeSuspend$$inlined$map$1$2;-><init>(Lkotlinx/coroutines/flow/FlowCollector;)V
 Landroidx/datastore/core/DataStoreImpl$handleUpdate$1;
 HSPLandroidx/datastore/core/DataStoreImpl$handleUpdate$1;-><init>(Landroidx/datastore/core/DataStoreImpl;Lkotlin/coroutines/Continuation;)V
+HSPLandroidx/datastore/core/DataStoreImpl$handleUpdate$1;->invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;
 Landroidx/datastore/core/DataStoreImpl$incrementCollector$1;
 HSPLandroidx/datastore/core/DataStoreImpl$incrementCollector$1;-><init>(Landroidx/datastore/core/DataStoreImpl;Lkotlin/coroutines/Continuation;)V
 Landroidx/datastore/core/DataStoreImpl$incrementCollector$2$1;
@@ -14548,6 +14549,7 @@ HSPLandroidx/datastore/core/SingleProcessCoordinator;->incrementAndGetVersion(Lk
 HSPLandroidx/datastore/core/SingleProcessCoordinator;->lock(Lkotlin/jvm/functions/Function1;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 Landroidx/datastore/core/SingleProcessCoordinator$lock$1;
 HSPLandroidx/datastore/core/SingleProcessCoordinator$lock$1;-><init>(Landroidx/datastore/core/SingleProcessCoordinator;Lkotlin/coroutines/Continuation;)V
+HSPLandroidx/datastore/core/SingleProcessCoordinator$lock$1;->invokeSuspend(Ljava/lang/Object;)Ljava/lang/Object;
 Landroidx/datastore/core/SingleProcessCoordinator$updateNotifications$1;
 HSPLandroidx/datastore/core/SingleProcessCoordinator$updateNotifications$1;-><init>(Lkotlin/coroutines/Continuation;)V
 HSPLandroidx/datastore/core/SingleProcessCoordinator$updateNotifications$1;->create(Ljava/lang/Object;Lkotlin/coroutines/Continuation;)Lkotlin/coroutines/Continuation;
@@ -21156,7 +21158,6 @@ HSPLdev/chrisbanes/haze/Utils_androidKt;->positionForHaze(Landroidx/compose/ui/l
 Ljakarta/inject/Provider;
 Ljavax/inject/Provider;
 Lkotlin/Function;
-Lkotlin/KotlinNothingValueException;
 Lkotlin/Lazy;
 Lkotlin/LazyKt;
 Lkotlin/LazyKt__LazyJVMKt;
@@ -23914,6 +23915,7 @@ HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->allocateNextCopy(J)Lkotl
 HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->getArray()Ljava/util/concurrent/atomic/AtomicReferenceArray;
 HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->getSize()I
 HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->get_state$volatile$FU()Ljava/util/concurrent/atomic/AtomicLongFieldUpdater;
+PLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->isEmpty()Z
 HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore;->removeFirstOrNull()Ljava/lang/Object;
 Lkotlinx/coroutines/internal/LockFreeTaskQueueCore$Companion;
 HSPLkotlinx/coroutines/internal/LockFreeTaskQueueCore$Companion;-><init>()V
